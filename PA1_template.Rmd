@@ -1,25 +1,136 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Peer Assessment 1"
+author: "Lim Chong Hoong"
+date: "19 July 2015"
+output: html_document
 ---
 
+## Loading and Preprocessing the data
 
-## Loading and preprocessing the data
+```{r echo = TRUE}
+dat <- read.csv("./activity.csv", header = T, sep = ",")
 
+# convert the "date" column data to Date type
+dat$date <- as.Date(dat$date) 
+```
 
+## What is the mean total number of steps taken per day?
 
-## What is mean total number of steps taken per day?
+Calculate the total number of steps taken per day 
 
+```{r echo = TRUE}
+# ignore NAs
+dat_without_NA <- na.omit(dat)
 
+# sum up the rows for the steps column grouped according to the date column
+stepsData <- rowsum(dat_without_NA$steps, format(dat_without_NA$date, '%Y-%m-%d'))
+
+# convert to a data frame
+stepsData <- data.frame(stepsData)
+
+# populate a name for the column
+names(stepsData) <- ("StepsTakenPerDay")
+
+# output the steps data
+stepsData
+```
+
+Make a histogram of the total number of steps taken each day
+
+```{r echo = TRUE}
+hist(stepsData$StepsTakenPerDay, main = "Histogram of Steps Data", xlab = "Steps Taken Per Day")
+```
+
+Calculate and report the mean and median of the total number of steps taken per day
+
+```{r echo = TRUE}
+mean(stepsData$StepsTakenPerDay)
+median(stepsData$StepsTakenPerDay)
+```
 
 ## What is the average daily activity pattern?
 
+Make a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
 
 
-## Imputing missing values
+```{r echo = TRUE}
+library(plyr)
 
+# Calculate average steps for each of 5-minute interval during a 24-hour period
+# summarise the data that is grouped by the "interval" column, using the mean function
+intervalMeanStepsData <- ddply(dat_without_NA, "interval", summarise,  mean=mean(steps))
 
+library(ggplot2)
+
+qplot(x=interval, y=mean, data = intervalMeanStepsData,  geom = "line", xlab="5 min interval", ylab="No. of steps", main="Average number of steps taken that is averaged across all days")
+```
+
+Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+```{r echo = TRUE}
+intervalMeanStepsData[which.max(intervalMeanStepsData$mean), 1]
+```
+
+## Inputing missing values
+Note that there are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data.
+
+Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+
+```{r echo = TRUE}
+length(which(is.na(dat) == TRUE))
+```
+
+Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r echo = TRUE}
+library(sqldf)
+
+## join the original data df with the mean of intervalMeanStepsData df based on the Date and Interval value
+sqlTableData <- sqldf('SELECT sqlData.*, intervalSqlData.mean FROM "intervalMeanStepsData" as intervalSqlData JOIN "dat" as sqldata ON sqldata.interval = intervalSqlData.interval ORDER BY sqlData.date, sqlData.interval ') 
+
+## fill with the mean where steps is NA
+sqlTableData$steps[is.na(sqlTableData$steps)] <- sqlTableData$mean[is.na(sqlTableData$steps)]
+
+## create a new df with date and total steps column after the NA are filled in
+newTotalStepsOrderedByDate <- sqldf('SELECT date, sum(steps) as "Total_Steps" FROM sqlTableData GROUP BY date ORDER BY date');
+
+newDataSet <- sqldf('SELECT date, Total_Steps as "steps" FROM "newTotalStepsOrderedByDate" ORDER BY date');
+```
+
+Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+```{r echo = TRUE}
+hist(newDataSet$steps, main=" ", breaks=10, xlab="After inputing NA - Total no. of steps taken daily")
+```
+
+=> Not much difference from the data in the first assignment 
+
+```{r echo = TRUE}
+newTotalSteps <- as.integer( sqldf('SELECT sum(steps) FROM sqlTableData') );
+meanStepsPerDay <- as.integer(newTotalSteps / NROW(newTotalStepsOrderedByDate) )
+meanStepsPerDay
+
+medianStepsPerDay <- median(newTotalStepsOrderedByDate$Total_Steps)
+medianStepsPerDay
+```
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+Create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+
+```{r echo = TRUE}
+
+sqlTableData$weektime <- as.factor(ifelse(weekdays(sqlTableData$date) %in% c("Saturday","Sunday"),"weekend", "weekday"))
+
+dat2 <- sqldf('SELECT interval, avg(steps) as "mean.steps", weektime FROM sqlTableData GROUP BY weektime, interval ORDER BY interval ')
+```
+
+Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data.
+
+```{r echo = TRUE}
+library("lattice")
+newPlot <- xyplot(mean.steps ~ interval | factor(weektime), data=dat2, type = 'l', main="Average no. of steps taken \nAveraged across all weekday days or weekend days", xlab="5min interval", ylab="Average no of steps taken")
+print (newPlot)    
+```
