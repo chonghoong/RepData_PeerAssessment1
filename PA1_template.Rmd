@@ -2,7 +2,9 @@
 title: "Peer Assessment 1"
 author: "Lim Chong Hoong"
 date: "19 July 2015"
-output: html_document
+output: 
+    html_document: 
+      keep_md: yes
 ---
 
 ## Loading and Preprocessing the data
